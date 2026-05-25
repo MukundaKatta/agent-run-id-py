@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-run-id-py"
+version = "0.1.0"
+description = "Generate, thread, and propagate run IDs for agent executions"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["llm", "agent", "tracing", "run-id", "ai"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/MukundaKatta/agent-run-id-py"
+
+[tool.setuptools.packages.find]
+where = ["src"]
