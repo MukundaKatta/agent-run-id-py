@@ -12,13 +12,23 @@ requires-python = ">=3.9"
 keywords = ["llm", "agent", "tracing", "run-id", "ai"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
 ]
 
 [project.urls]
 Homepage = "https://github.com/MukundaKatta/agent-run-id-py"
+Repository = "https://github.com/MukundaKatta/agent-run-id-py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+agent_run_id = ["py.typed"]
