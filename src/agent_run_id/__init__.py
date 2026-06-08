@@ -6,9 +6,11 @@ import functools
 import threading
 import time
 import uuid
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, TypeVar
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 # Async-safe context variable for the current run ID
 _current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
@@ -63,38 +65,48 @@ class RunContext:
     """
 
     def __init__(self, run_id: str | None = None, prefix: str = "run") -> None:
-        self.run_id = run_id if run_id is not None else new_run_id(prefix)
-        self._token = None
+        self.run_id: str = run_id if run_id is not None else new_run_id(prefix)
+        self._token: Token[str | None] | None = None
 
     def __enter__(self) -> "RunContext":
         self._token = _current_run_id.set(self.run_id)
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: Any) -> None:
         if self._token is not None:
             _current_run_id.reset(self._token)
+            self._token = None
 
 
-def wrap(fn, prefix: str = "run"):
-    """Decorator that creates a fresh run ID for each call."""
+def wrap(fn: F, prefix: str = "run") -> F:
+    """Decorator that creates a fresh run ID for each call.
+
+    The wrapped function sees ``current_run_id()`` return a new, unique ID for
+    the duration of every call. The original signature is preserved.
+    """
 
     @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         with RunContext(prefix=prefix):
             return fn(*args, **kwargs)
 
-    return wrapper
+    return wrapper  # type: ignore[return-value]
 
 
-def wrap_with_id(fn, prefix: str = "run"):
-    """Decorator that injects the run_id as a keyword argument into each call."""
+def wrap_with_id(fn: F, prefix: str = "run") -> F:
+    """Decorator that injects the run_id as a keyword argument into each call.
+
+    The wrapped function must accept a ``run_id`` keyword argument; a fresh ID
+    is generated and passed in on every call (and also set as the current run
+    ID for the duration of the call).
+    """
 
     @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         with RunContext(prefix=prefix) as ctx:
             return fn(*args, run_id=ctx.run_id, **kwargs)
 
-    return wrapper
+    return wrapper  # type: ignore[return-value]
 
 
 @dataclass
@@ -110,12 +122,12 @@ class RunRegistry:
         print(registry.get("run_abc"))
     """
 
-    _runs: dict = field(default_factory=dict)
+    _runs: dict[str, dict[str, Any]] = field(default_factory=dict)
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
-    def start(self, run_id: str, metadata: dict | None = None) -> None:
+    def start(self, run_id: str, metadata: dict[str, Any] | None = None) -> None:
         with self._lock:
             self._runs[run_id] = {
                 "run_id": run_id,
@@ -149,7 +161,7 @@ class RunRegistry:
                     }
                 )
 
-    def get(self, run_id: str) -> dict | None:
+    def get(self, run_id: str) -> dict[str, Any] | None:
         with self._lock:
             return dict(self._runs[run_id]) if run_id in self._runs else None
 
