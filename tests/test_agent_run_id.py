@@ -1,9 +1,37 @@
 """Tests for agent-run-id-py."""
+
+import threading
+
 import pytest
 from agent_run_id import (
-    new_run_id, current_run_id, set_run_id, require_run_id,
-    inject, RunContext, RunRegistry, wrap, wrap_with_id,
+    new_run_id,
+    current_run_id,
+    set_run_id,
+    require_run_id,
+    inject,
+    RunContext,
+    RunRegistry,
+    wrap,
+    wrap_with_id,
 )
+
+
+def _run_in_fresh_context(fn):
+    """Run fn in a new thread so the run-id ContextVar starts at its default (None)."""
+    box = {}
+
+    def target():
+        try:
+            box["result"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            box["error"] = exc
+
+    t = threading.Thread(target=target)
+    t.start()
+    t.join()
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
 
 
 def test_new_run_id_format():
@@ -62,13 +90,7 @@ def test_set_run_id():
         assert current_run_id() == "overridden"
 
 
-def test_require_run_id_raises_when_none():
-    # Use a fresh context to ensure no ID
-    # Save and clear
-    with RunContext("tmp"):
-        pass
-    # Outside a RunContext: may already have None
-    # We test the logic by directly checking
+def test_require_run_id_returns_current():
     with RunContext("required_test"):
         rid = require_run_id()
         assert rid == "required_test"
@@ -131,6 +153,7 @@ def test_wrap_with_id_injects_kwarg():
 
 # Registry tests
 
+
 def test_registry_start_and_finish():
     reg = RunRegistry()
     reg.start("r1", metadata={"model": "claude"})
@@ -176,3 +199,48 @@ def test_registry_metadata():
     reg.start("m1", metadata={"session": "abc"})
     info = reg.get("m1")
     assert info["metadata"]["session"] == "abc"
+
+
+# Coverage for the "no run ID in context" code paths (run in a fresh thread)
+
+
+def test_current_run_id_none_in_fresh_context():
+    assert _run_in_fresh_context(current_run_id) is None
+
+
+def test_require_run_id_raises_when_none():
+    with pytest.raises(RuntimeError):
+        _run_in_fresh_context(require_run_id)
+
+
+def test_inject_passthrough_when_no_context():
+    original = {"a": 1}
+    result = _run_in_fresh_context(lambda: inject(original))
+    assert result == {"a": 1}
+    assert "run_id" not in result
+
+
+def test_set_run_id_in_fresh_context():
+    def body():
+        set_run_id("manual_id")
+        return current_run_id()
+
+    assert _run_in_fresh_context(body) == "manual_id"
+
+
+def test_registry_repr_hides_lock():
+    reg = RunRegistry()
+    assert "_lock" not in repr(reg)
+
+
+def test_wrap_with_id_returns_same_id_passed_to_fn():
+    seen = []
+
+    @wrap_with_id
+    def fn(run_id=None):
+        seen.append(run_id)
+        return run_id
+
+    result = fn()
+    assert result == seen[0]
+    assert result.startswith("run_")

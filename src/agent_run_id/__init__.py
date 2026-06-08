@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import threading
+import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -75,23 +77,23 @@ class RunContext:
 
 def wrap(fn, prefix: str = "run"):
     """Decorator that creates a fresh run ID for each call."""
-    import functools
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         with RunContext(prefix=prefix):
             return fn(*args, **kwargs)
+
     return wrapper
 
 
 def wrap_with_id(fn, prefix: str = "run"):
     """Decorator that injects the run_id as a keyword argument into each call."""
-    import functools
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         with RunContext(prefix=prefix) as ctx:
             return fn(*args, run_id=ctx.run_id, **kwargs)
+
     return wrapper
 
 
@@ -109,10 +111,11 @@ class RunRegistry:
     """
 
     _runs: dict = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     def start(self, run_id: str, metadata: dict | None = None) -> None:
-        import time
         with self._lock:
             self._runs[run_id] = {
                 "run_id": run_id,
@@ -125,24 +128,26 @@ class RunRegistry:
             }
 
     def finish(self, run_id: str, result: Any = None) -> None:
-        import time
         with self._lock:
             if run_id in self._runs:
-                self._runs[run_id].update({
-                    "status": "done",
-                    "finished_at": time.time(),
-                    "result": result,
-                })
+                self._runs[run_id].update(
+                    {
+                        "status": "done",
+                        "finished_at": time.time(),
+                        "result": result,
+                    }
+                )
 
     def fail(self, run_id: str, error: Exception) -> None:
-        import time
         with self._lock:
             if run_id in self._runs:
-                self._runs[run_id].update({
-                    "status": "failed",
-                    "finished_at": time.time(),
-                    "error": repr(error),
-                })
+                self._runs[run_id].update(
+                    {
+                        "status": "failed",
+                        "finished_at": time.time(),
+                        "error": repr(error),
+                    }
+                )
 
     def get(self, run_id: str) -> dict | None:
         with self._lock:
